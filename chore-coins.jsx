@@ -607,14 +607,54 @@ export default function App() {
 
   // Each kid has: id, name, emoji avatar, Solana devnet wallet address,
   // on-chain token balance (null = not yet fetched), and a color palette index.
-  const [kids, setKids] = useState([
+  /**
+   * Base (env-var-seeded) kids. These are always present on every load and
+   * their wallet addresses come from build-time environment variables so they
+   * are never overwritten by localStorage data. IDs are small integers (1–N)
+   * which lets us distinguish them from user-added kids whose IDs are
+   * Date.now() timestamps (always >> N).
+   */
+  const BASE_KIDS = [
     { id: 1, name: "Andrew Jr", emoji: "🧒", wallet: import.meta.env.VITE_WALLET_ANDREW_JR || "", balance: null, color: 0 },
     { id: 2, name: "Emily",     emoji: "👧", wallet: import.meta.env.VITE_WALLET_EMILY     || "", balance: null, color: 1 },
     { id: 3, name: "Paul",      emoji: "👦", wallet: import.meta.env.VITE_WALLET_PAUL      || "", balance: null, color: 2 },
     { id: 4, name: "Opa",       emoji: "🐼", wallet: import.meta.env.VITE_WALLET_OPA       || "", balance: null, color: 3 },
-  ]);
+    { id: 5, name: "Andre",     emoji: "🧒", wallet: import.meta.env.VITE_WALLET_ANDRE     || "", balance: null, color: 4 },
+  ];
+  // Fast lookup used by the persistence effect to skip base kids when writing
+  // to localStorage — we only persist user-added kids, not the env-var ones.
+  const BASE_KID_IDS = new Set(BASE_KIDS.map(k => k.id));
 
-  const [chores, setChores] = useState(DEFAULT_CHORES);
+  /**
+   * Kids list = base kids (env vars) + any extra kids added at runtime.
+   *
+   * Extra kids are stored in localStorage under "extra-kids" so they survive
+   * a page refresh. Base kids are always re-seeded from env vars on load so
+   * their wallet addresses are never stale or overwritten by cached data.
+   */
+  const [kids, setKids] = useState(() => {
+    try {
+      const extra = JSON.parse(localStorage.getItem("extra-kids") || "[]");
+      return [...BASE_KIDS, ...extra];
+    } catch {
+      return BASE_KIDS;
+    }
+  });
+
+  /**
+   * Chores list, fully persisted to localStorage under "chores".
+   *
+   * Unlike kids, chores have no env-var counterpart — DEFAULT_CHORES is only
+   * used on the very first load (or after localStorage is cleared). Any
+   * additions or deletions made in the UI are saved automatically.
+   */
+  const [chores, setChores] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("chores") || "null");
+      if (Array.isArray(saved) && saved.length > 0) return saved;
+    } catch {}
+    return DEFAULT_CHORES;
+  });
 
   // The `id` of the currently selected kid, or null if none is selected.
   // Clicking a chore while a kid is selected triggers the payment flow.
@@ -681,6 +721,16 @@ export default function App() {
   useEffect(() => {
     if (mintAddress) refreshBalances();
   }, [mintAddress]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the full chores list to localStorage whenever it changes.
+  useEffect(() => {
+    localStorage.setItem("chores", JSON.stringify(chores));
+  }, [chores]);
+
+  // Persist any user-added kids (those not in the base set) to localStorage.
+  useEffect(() => {
+    localStorage.setItem("extra-kids", JSON.stringify(kids.filter(k => !BASE_KID_IDS.has(k.id))));
+  }, [kids]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist payment history to localStorage whenever it changes.
   useEffect(() => {
