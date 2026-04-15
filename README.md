@@ -4,6 +4,8 @@ A family chore-reward tracker that pays kids in real Solana SPL tokens on devnet
 
 <img width="2448" height="1728" alt="ChoreCoins" src="https://github.com/user-attachments/assets/a55ab91d-9a46-46bc-9b7b-29a216e39faa" />
 
+<img width="495" height="612" alt="ChoreCoins_login" src="https://github.com/user-attachments/assets/e77cdfc6-68da-4c7f-9033-c9fa39f9e6ec" />
+
 
 ---
 
