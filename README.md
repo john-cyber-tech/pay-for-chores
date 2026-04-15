@@ -2,7 +2,8 @@
 
 A family chore-reward tracker that pays kids in real Solana SPL tokens on devnet. Parents select a child, click a completed chore, and the app generates a ready-to-run `spl-token transfer` command. Running that command sends tokens from the parent's wallet to the child's devnet wallet. Balances are read live from the Solana devnet RPC.
 
-![ChoreCoins screenshot placeholder](https://placehold.co/900x500?text=ChoreCoins+Screenshot)
+<img width="2448" height="1728" alt="ChoreCoins" src="https://github.com/user-attachments/assets/a55ab91d-9a46-46bc-9b7b-29a216e39faa" />
+
 
 ---
 
