@@ -18,6 +18,9 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "./src/auth/AuthContext.jsx";
+import LoginPage from "./src/components/LoginPage.jsx";
+import { setKidPin, kidHasPin } from "./src/auth/authService.js";
 
 // ─── Solana devnet helpers ───────────────────────────────────────────────────
 
@@ -580,6 +583,110 @@ const css = `
 /** Emoji options available when adding or editing a child profile. */
 const KID_EMOJIS = ["🧒", "👦", "👧", "🧑", "🐱", "🐶", "🦊", "🐼", "🦁", "🐸", "🐧", "🦄"];
 
+// ─── Kid Dashboard ────────────────────────────────────────────────────────────
+
+/**
+ * Read-only view shown when a kid is logged in. Displays their balance,
+ * available chores (informational only — paying is parent-only), and their
+ * personal payment history.
+ */
+function KidView({ kid, chores, history, onLogout }) {
+  if (!kid) return null;
+  const c = COLORS[kid.color % COLORS.length];
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="app">
+
+        {/* Header */}
+        <div className="header">
+          <div>
+            <div className="logo">🪙 ChoreCoins</div>
+            <div className="logo-sub">Devnet Rewards Tracker</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontWeight: 700, color: "#888", fontSize: "0.9rem" }}>
+              {kid.emoji} {kid.name}
+            </span>
+            <button
+              className="btn btn-secondary"
+              style={{ flex: "none", padding: "8px 16px" }}
+              onClick={onLogout}
+            >
+              Log Out
+            </button>
+          </div>
+        </div>
+
+        {/* Kid's balance card */}
+        <div className="section-title">👛 My Balance</div>
+        <div className="kids-grid" style={{ marginBottom: 36 }}>
+          <div
+            className="kid-card selected"
+            style={{ background: c.bg, color: c.text, cursor: "default" }}
+          >
+            <div className="kid-avatar" style={{ background: c.light }}>{kid.emoji}</div>
+            <div className="kid-name">{kid.name}</div>
+            <div className="kid-balance-label">Balance</div>
+            {kid.balance === null
+              ? <div className="balance-loading">—</div>
+              : <div className="kid-balance" style={{ color: c.accent }}>{kid.balance} <span style={{ fontSize: "0.9rem" }}>🪙</span></div>
+            }
+          </div>
+        </div>
+
+        {/* Chores — read only */}
+        <div className="chores-panel">
+          <div className="chores-header">
+            <div className="section-title" style={{ margin: 0 }}>📋 Available Chores</div>
+            <span style={{ fontSize: "0.82rem", color: "#BBB", fontWeight: 700 }}>
+              Ask a parent to mark chores done
+            </span>
+          </div>
+          <div className="chores-grid">
+            {chores.map(chore => (
+              <div
+                key={chore.id}
+                className="chore-btn"
+                style={{ cursor: "default", opacity: 0.85 }}
+              >
+                <span className="chore-icon">{chore.icon}</span>
+                <div className="chore-info">
+                  <div className="chore-name">{chore.name}</div>
+                  <div className="chore-coins">+{chore.coins} 🪙</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* History — filtered to this kid only */}
+        <div className="history-panel">
+          <div className="section-title">📜 My Payments</div>
+          {history.length === 0
+            ? <div className="empty-history">No payments yet — complete a chore to earn coins!</div>
+            : (
+              <div className="history-list">
+                {history.map(item => (
+                  <div key={item.id} className="history-item">
+                    <span className="history-icon">{item.choreIcon}</span>
+                    <div className="history-detail">
+                      <div className="history-name">{item.choreName}</div>
+                      <div className="history-meta">Today at {item.time}</div>
+                    </div>
+                    <div className="history-amount">+{item.coins} 🪙</div>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 /**
@@ -598,6 +705,9 @@ const KID_EMOJIS = ["🧒", "👦", "👧", "🧑", "🐱", "🐶", "🦊", "�
  *     storing wallet addresses in localStorage by default).
  */
 export default function App() {
+  const { user, logout } = useAuth();
+  const isParent = user?.role === 'parent';
+  const isKid    = user?.role === 'kid';
   // The SPL token mint address shared by all kids. Pre-populated from the
   // VITE_MINT_ADDRESS env var at build time; falls back to localStorage so
   // a manually-entered value persists across reloads.
@@ -687,6 +797,11 @@ export default function App() {
 
   // Controlled form state for the "Add Chore" modal
   const [newChore, setNewChore] = useState({ name: "", coins: 5, icon: "⭐" });
+
+  // PIN management modal: null = closed, kidId number = open for that kid
+  const [showSetPin, setShowSetPin] = useState(null);
+  const [pinForm, setPinForm] = useState({ pin: "", confirm: "" });
+  const [pinError, setPinError] = useState("");
 
   /**
    * Pushes a transient toast notification that auto-dismisses after 3.5 s.
@@ -845,6 +960,18 @@ export default function App() {
     setEditingWallet(null);
   };
 
+  /** Saves a new PIN for a kid (called by parent from the Set PIN modal). */
+  const handleSetKidPin = async () => {
+    if (pinForm.pin.length < 4) return setPinError("PIN must be at least 4 characters.");
+    if (pinForm.pin !== pinForm.confirm) return setPinError("PINs do not match.");
+    await setKidPin(showSetPin, pinForm.pin);
+    setPinForm({ pin: "", confirm: "" });
+    setPinError("");
+    setShowSetPin(null);
+    const kid = kids.find(k => k.id === showSetPin);
+    addToast(`🔐 PIN set for ${kid?.name}!`);
+  };
+
   /**
    * Adds a new chore to the chore list from the "Add Chore" modal form.
    */
@@ -857,6 +984,18 @@ export default function App() {
   };
 
   const selectedKidObj = kids.find(k => k.id === selectedKid);
+
+  // ── Auth guards ──────────────────────────────────────────────────────────────
+
+  // Not logged in → show login page (kids list is passed so kids can pick names)
+  if (!user) return <LoginPage kids={kids} />;
+
+  // Kid logged in → show read-only kid dashboard
+  if (isKid) {
+    const myKid = kids.find(k => k.id === user.kidId);
+    const myHistory = history.filter(h => h.kidId === user.kidId);
+    return <KidView kid={myKid} chores={chores} history={myHistory} onLogout={logout} />;
+  }
 
   return (
     <>
@@ -882,6 +1021,13 @@ export default function App() {
               </button>
             )}
           </div>
+          <button
+            className="btn btn-secondary"
+            style={{ flex: "none", padding: "8px 16px" }}
+            onClick={logout}
+          >
+            Log Out
+          </button>
         </div>
 
         {/* Kids — grid of color-coded cards; click to select, hover to delete */}
@@ -930,6 +1076,13 @@ export default function App() {
                   ? <div className="balance-loading">{kid.wallet && mintAddress ? "loading…" : "—"}</div>
                   : <div className="kid-balance" style={{ color: c.accent }}>{kid.balance} <span style={{ fontSize: "0.9rem" }}>🪙</span></div>
                 }
+                <button
+                  className="btn btn-secondary"
+                  style={{ marginTop: 10, padding: "5px 10px", fontSize: "0.72rem", flex: "none" }}
+                  onClick={e => { e.stopPropagation(); setShowSetPin(kid.id); setPinForm({ pin: "", confirm: "" }); setPinError(""); }}
+                >
+                  {kidHasPin(kid.id) ? "🔐 Change PIN" : "🔓 Set PIN"}
+                </button>
               </div>
             );
           })}
@@ -1090,6 +1243,51 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Set Kid PIN modal — parent only */}
+      {showSetPin && (() => {
+        const pinKid = kids.find(k => k.id === showSetPin);
+        return (
+          <div className="modal-overlay" onClick={() => setShowSetPin(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-title">🔐 Set PIN for {pinKid?.emoji} {pinKid?.name}</div>
+              <div className="form-group">
+                <label className="form-label">New PIN</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="Min. 4 characters"
+                  value={pinForm.pin}
+                  onChange={e => { setPinForm(f => ({ ...f, pin: e.target.value })); setPinError(""); }}
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Confirm PIN</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="Repeat PIN"
+                  value={pinForm.confirm}
+                  onChange={e => { setPinForm(f => ({ ...f, confirm: e.target.value })); setPinError(""); }}
+                  onKeyDown={e => e.key === "Enter" && handleSetKidPin()}
+                />
+              </div>
+              {pinError && (
+                <div style={{ color: "#C62828", fontSize: "0.85rem", fontWeight: 700, marginBottom: 12 }}>
+                  {pinError}
+                </div>
+              )}
+              <div className="modal-actions">
+                <button className="btn btn-secondary" onClick={() => setShowSetPin(null)}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleSetKidPin}>Save PIN</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toast notifications — stacked in the bottom-right corner */}
       <div className="toast-container">

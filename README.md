@@ -9,11 +9,13 @@ A family chore-reward tracker that pays kids in real Solana SPL tokens on devnet
 
 ## How it works
 
-1. **Select a kid** — click their card to make them active.
-2. **Click a chore** — a modal appears with a pre-built `spl-token transfer` CLI command.
-3. **Run the command** in your terminal to execute the on-chain transfer.
-4. **Click Done** — the app records the payment locally and optimistically updates the displayed balance.
-5. Use the **↻ refresh button** next to the mint address to re-fetch all balances directly from Solana devnet.
+1. **Log in** — parents and kids each sign in with a PIN on the login screen.
+2. **Select a kid** — click their card to make them active (parent view).
+3. **Click a chore** — a modal appears with a pre-built `spl-token transfer` CLI command.
+4. **Run the command** in your terminal to execute the on-chain transfer.
+5. **Click Done** — the app records the payment locally and optimistically updates the displayed balance.
+6. Use the **↻ refresh button** next to the mint address to re-fetch all balances directly from Solana devnet.
+7. **Kids** can log in to see their own balance, available chores, and payment history (read-only).
 
 ---
 
@@ -21,21 +23,41 @@ A family chore-reward tracker that pays kids in real Solana SPL tokens on devnet
 
 ```
 PayForChores/
-├── chore-coins.jsx   # Entire React application — component, styles, and helpers
+├── chore-coins.jsx        # Main React app — parent dashboard, kid view, styles
 ├── src/
-│   └── main.jsx      # Vite entry point — mounts <App /> into index.html
-├── index.html        # HTML shell with a single #root div
-├── vite.config.js    # Vite + React plugin configuration
-└── package.json      # Dependencies (React 18, Vite 6)
+│   ├── main.jsx           # Vite entry point — wraps <App /> in <AuthProvider>
+│   ├── auth/
+│   │   ├── AuthContext.jsx  # React context — exposes user, logout, setSession
+│   │   └── authService.js   # PIN hashing (SHA-256), JWT sign/verify (jose), localStorage I/O
+│   └── components/
+│       └── LoginPage.jsx    # Full-screen login — first-run setup, parent PIN, kid picker
+├── index.html             # HTML shell with a single #root div
+├── vite.config.js         # Vite + React plugin configuration
+└── package.json           # Dependencies (React 18, Vite 6, jose)
 ```
+
+### Authentication
+
+ChoreCoins uses a lightweight, fully client-side auth system — no backend or account signup required.
+
+| Flow | Description |
+|---|---|
+| **First run** | Parent creates a PIN on the first visit; the hashed PIN is stored in `localStorage` |
+| **Parent login** | PIN is hashed (SHA-256) and compared to the stored hash; on success a signed JWT (HS256, 8 h TTL) is issued via `jose` |
+| **Kid login** | Kid picks their avatar, then enters their PIN (set by the parent); same JWT flow |
+| **Kid view** | Kids get a read-only dashboard: their balance, the chore list, and their own payment history |
+| **Parent view** | Full management view — pay chores, manage kids, set/change kid PINs |
+| **Session persistence** | JWT is stored in `localStorage` and verified on page load; expired or tampered tokens are cleared automatically |
+
+The signing secret is generated randomly on first run and stored in `localStorage`. The auth layer is designed to be replaceable with Google OAuth — see comments in `AuthContext.jsx` and `LoginPage.jsx`.
 
 ### Key design decisions
 
 | Decision | Rationale |
 |---|---|
-| Single `.jsx` file | Keeps the project self-contained and easy to share/fork |
+| Single `.jsx` file for core app | Keeps the project self-contained and easy to share/fork |
 | No router or state library | App is a single screen; React's built-in hooks are sufficient |
-| Inline `<style>` tag | Zero CSS build step; styles ship with the component |
+| Inline `<style>` tags | Zero CSS build step; styles ship with each component |
 | `localStorage` for history, chores, and extra kids | No backend required; all data is device-local |
 | Base kids seeded from env vars, extras from `localStorage` | Wallet addresses from `.env` are never overwritten by cached data; kids added in the UI persist across refreshes |
 | Optimistic balance update | Avoids an RPC round-trip after every confirmed payment |
